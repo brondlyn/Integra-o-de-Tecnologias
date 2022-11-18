@@ -1,11 +1,3 @@
-/* Fatec RP - 5o ADS
- * Projeto IoT
- * Caio, Bianca
- * Data: 21/05/2022 - Inicio do projeto
- *       24/05/2022 - Alterado para e pulso de 500ms e atualiza o mqtt
- *       07/06/2022 - Alterado mqttID e Topico 
-*/
-
 #include <ESP8266WiFi.h> 
 #include <PubSubClient.h>
 
