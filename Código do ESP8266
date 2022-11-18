@@ -1,0 +1,167 @@
+/* Fatec RP - 5o ADS
+ * Projeto IoT
+ * Caio, Bianca
+ * Data: 21/05/2022 - Inicio do projeto
+ *       24/05/2022 - Alterado para e pulso de 500ms e atualiza o mqtt
+ *       07/06/2022 - Alterado mqttID e Topico 
+*/
+
+#include <ESP8266WiFi.h> 
+#include <PubSubClient.h>
+
+// Informações do RELE 
+#define RELE1PIN  0      // GPIO0 ESP8266-01   (Rele1)
+#define LED LED_BUILTIN 
+
+// Informações da rede WiFi
+const char* wifiSSID  = "****";    // SSID  da rede WiFi
+//const char* wifiSSID  = "****";       // SSID  da rede WiFi
+const char* wifiSenha = "****";  // Senha da rede WiFi 
+
+WiFiClient wifiClient;                        
+ 
+// Informações do broker MQTT 
+const char* mqttServer = "broker.mqttdashboard.com"; // Servidor mqtt
+const int   mqttPort = 1883;                         // Porta
+const char* mqttUser = "";                           // Usuario 
+const char* mqttPassword = "";                       // Senha
+const char* mqttID = "******";                 // ID unico
+const char* mqttTopicSub1 = "****";              // Tópico que sera assinado (status do rele1)
+const char* mqttTopicPub1 = "****";              // Tópico #1 que sera publicado no rele1
+
+PubSubClient MQTT(wifiClient);                       // Instanciação do Cliente MQTT passando o objeto espClient
+
+// Declara Variáveis do sistema
+unsigned long tempoLED = 0;
+
+// Declaração das Funções do sistema
+void piscaLed();        // Pisca LED
+void mantemConexoes();  // Garante que as conexoes com WiFi e MQTT Broker se mantenham ativas
+void conectaWiFi();     // Faz conexão com WiFi
+void conectaMQTT();     // Faz conexão com Broker MQTT
+void recebePacote(char* topic, byte* payload, unsigned int length); // Recebe dados do Broket MQTT
+
+
+void setup() {
+  pinMode(LED, OUTPUT);
+  pinMode(RELE1PIN, OUTPUT);      // Define GPIO como SAIDA que
+  digitalWrite(RELE1PIN, LOW);    // Inicia em LOW (Desligado)
+
+  Serial.begin(115200);
+  Serial.println("");
+
+  conectaWiFi();
+  
+  MQTT.setServer(mqttServer, mqttPort);  
+  MQTT.setCallback(recebePacote); 
+}
+
+
+void loop() {
+  piscaLED();
+  mantemConexoes();    // Realiza subscribe
+  MQTT.loop();         // Mantém o loop MQTT
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Função para piscar o LED
+void piscaLED(){
+  if ((millis()-tempoLED) >= 500){
+    tempoLED = millis();
+    digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Função para manter conexões
+void mantemConexoes() {
+    if (!MQTT.connected()) {
+       conectaMQTT(); 
+    }
+    
+    conectaWiFi(); //se não há conexão com o WiFI, a conexão é refeita
+}
+
+//////////////////////////////////////////////////////////////////////////////////////
+// Função para conectar na WiFi
+void conectaWiFi() {
+
+  if (WiFi.status() == WL_CONNECTED) {
+     return;
+  }
+        
+  Serial.print("Conectando-se na rede: ");
+  Serial.print(wifiSSID);
+  Serial.println("  Aguarde!");
+
+  WiFi.begin(wifiSSID, wifiSenha); // Conecta na rede WI-FI  
+  while (WiFi.status() != WL_CONNECTED) {
+      delay(100);
+      Serial.print(".");
+  }
+  //The ESP8266 tries to reconnect automatically when the connection is lost
+  // https://randomnerdtutorials.com/solved-reconnect-esp8266-nodemcu-to-wifi/
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(true);
+  
+  // Exibe informações no monitor serial
+  Serial.println();
+  Serial.print("Conectado com sucesso, na rede: ");
+  Serial.println(wifiSSID);  
+  Serial.print("IP obtido: ");
+  Serial.println(WiFi.localIP()); 
+  Serial.print("Chip ID : "); 
+  Serial.println(ESP.getFlashChipId());
+  Serial.print("Chip MAC: ");
+  Serial.println(WiFi.macAddress());
+}
+
+///////////////////////////////////////////////////////////////////////////////////
+// Função para conectar ao Broker MQTT
+void conectaMQTT() { 
+    while (!MQTT.connected()) {
+        Serial.print("Conectando ao Broker: ");
+        Serial.println(mqttServer);
+        if (MQTT.connect(mqttID)) {
+            Serial.println("Broker OK");
+            MQTT.subscribe(mqttTopicSub1);
+            //MQTT.publish(mqttTopicPub1, "0");      // Publica condição inicial no mqtt para forçar iniciar desligado
+        } 
+        //else {
+        //    Serial.println("Nao foi possivel se conectar ao broker.");
+        //    Serial.println("Reconectando em 10ms");
+        //    delay(10);
+        //}
+    }
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Função de multiplos subscribes 
+void recebePacote(char* topic, byte* payload, unsigned int length) {
+  String msg = "";
+  int msgStatus;
+  Serial.print("MQTT recebido [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+     char c = (char)payload[i];
+     msg += c;
+  }
+  Serial.print(msg); 
+  Serial.println(" ");
+  
+  if (strcmp(topic, mqttTopicSub1) == 0) { // strcmp() compara strings 0 = igual (verifico apenas o tópico)
+    msgStatus = (msg.toInt());             // Converte string para inteiro para verificacao
+    if (msgStatus == 0) {
+       digitalWrite(RELE1PIN,LOW);           // Desliga 
+    } 
+    if (msgStatus == 1) {
+       digitalWrite(RELE1PIN,HIGH);          // Liga
+       delay(500);
+       digitalWrite(RELE1PIN, LOW);
+       MQTT.publish(mqttTopicPub1, "0");      // Publica "0" para atualizar o mqtt
+    } 
+  }    
+}
